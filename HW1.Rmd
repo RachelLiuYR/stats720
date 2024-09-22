@@ -8,7 +8,9 @@ output:
     df_print: paged
 ---
 ## Packages Loaded
+
 ```{r}
+## BMB: avoid chaff by setting message=FALSE in chunk options ...
 library(tidyverse)
 library(splines)
 library(sandwich)
@@ -41,6 +43,8 @@ newdata <- mydat |> filter(medal == "Gold")
 
 # Clean the data by dropping rows with missing values for GDP and population
 newdata_clean <- newdata |> drop_na(gdp, pop)
+
+## BMB: comment on whether/how dropping incomplete cases will affect results?
 ```
 
 #### Log-Transforming the Variables
@@ -49,7 +53,8 @@ newdata_clean <- newdata |> drop_na(gdp, pop)
 -   If the distribution of the number of gold medals is highly skewed (with many zeros and a few large values), log-transforming the response variable `n` can help to stabilize variance and make the data more suitable for linear modeling.
 
 ```{r}
-newdata_clean <- newdata_clean |> 
+newdata_clean <- newdata_clean |>
+  ## BMB: don't really need +1 for positive-valued variables (gdp, pop) ?
   mutate(log_gdp = log(gdp + 1), 
          log_pop = log(pop + 1),
          log_n = log(n + 1))
@@ -66,6 +71,8 @@ model_log <- lm(log_n ~ ns(log_gdp, df = 5) + ns(log_pop, df = 5), data = newdat
 summary(model)
 summary(model_log)
 ```
+
+**BMB**: (1) better to incorporate numeric values programmatically (e.g. this way: `r round(summary(model)$r.squared, 3)`); (2) why fit both models? These comparisons are somewhat dangerous -- you should make the comparisons based on model diagnostics, not on goodness-of-fit measures or p-values.
 
 -   The **original model** had a higher R-squared (**0.7486**), explaining 74.86% of the variability in gold medals, but with a relatively high residual standard error (RSE) of **8.293**, indicating issues with extreme values. In contrast, the **log-transformed model** had a lower R-squared (**0.506**), explaining 50.6% of the variability, but a much lower RSE (**0.859**), suggesting a more stable fit when modeling proportional changes. Significant coefficients for the log-transformed GDP splines (e.g., **6.00314** for `ns(log_gdp, df = 5)5`) highlight a strong non-linear relationship between GDP and gold medals.
 
@@ -86,6 +93,8 @@ summary(model_interaction)
 -   The interaction model improves on the log-transformed model, with a higher R-squared (**0.5926** vs **0.506**) and a lower residual standard error (**0.7991** vs **0.859**). This suggests that the interaction model explains more variability and provides a better fit. The significant interaction terms (p \< 0.001) indicate non-linear interactions between GDP and population in predicting Olympic success.
 
 -   Given its better fit and ability to capture the complexity of the relationships between GDP, population, and gold medal counts, the **interaction model** is preferred for understanding how these factors jointly influence Olympic outcomes.
+
+**BMB**: definitely shouldn't look at fits incrementally in this way if inference is your goal (if your goal is prediction it may be OK, but you have to be careful not to overfit -- at the least, consider penalized measures like AIC or adjusted R-squared ...)
 
 ### Part b: Units and Thresholds
 
@@ -114,9 +123,9 @@ summary(model_interaction)
 
 -   **R-squared**: 0.5926, meaning that the model explains 59.26% of the variability in the log-transformed number of gold medals.
 
--   **Residual Standard Error (RSE)**: 0.7991, indicating a reasonably good fit, with relatively small deviations from the observed values.
+-   **Residual Standard Error (RSE)**: 0.7991, indicating a reasonably good fit, with relatively small deviations from the observed values. **BMB**: how do you know this is a small value?
 
--   **Significant Interaction Terms**: Several interaction terms between log_gdp and log_pop are statistically significant (p \< 0.001), highlighting important non-linear relationships between GDP and population in predicting Olympic success.
+-   **Significant Interaction Terms**: Several interaction terms between log_gdp and log_pop are statistically significant (p \< 0.001), highlighting important non-linear relationships between GDP and population in predicting Olympic success.  **BMB**: how do you know that "significant" implies "important"?
 
 ### Part d: Model Diagnostics
 
@@ -126,13 +135,17 @@ par(mar = c(5, 4, 4, 2) + 0.1)
 plot(model_interaction)
 ```
 
--   **Linearity**: The **Residuals vs Fitted plot** shows a slight curvature, suggesting that the model might not fully capture the non-linear relationship between the predictors and the response. This non-linearity indicates that some interactions or non-linear terms might still be missing from the model, despite using splines.
+-   **Linearity**: The **Residuals vs Fitted plot** shows a slight curvature, suggesting that the model might not fully capture the non-linear relationship between the predictors and the response. This non-linearity indicates that some interactions or non-linear terms might still be missing from the model, despite using splines. **BMB**: fairly small, though (confidence ribbons provided by `performance::model_check` would help here)
 
--   **Normality of Residuals**: The **Q-Q plot** suggests that the residuals are roughly normally distributed. However, the deviations at both the lower and upper tails indicate that there are some extreme values, which may not be well-captured by the model, potentially outliers.
+-   **Normality of Residuals**: The **Q-Q plot** suggests that the residuals are roughly normally distributed. However, the deviations at both the lower and upper tails indicate that there are some extreme values, which may not be well-captured by the model, potentially outliers.  **BMB**: these look like 'fat tails' to me, rather than discrete outliers. (You should probably look at the Q-Q plot *last*.)
 
 -   **Homoscedasticity**: The **Scale-Location plot** shows some evidence of heteroscedasticity. The spread of the residuals appears to increase with the fitted values, which suggests that the variance of the residuals is not constant across all levels of the predicted values. This indicates that the assumption of homoscedasticity might be violated.
 
+**BMB**: spread of residuals is not what's important here, but the trend. It does look like the variance might be highest around `log(medals)==1` ...
+
 -   **Outliers/Influential Points**: The **Residuals vs Leverage plot** highlights a few points with high leverage, particularly observations 81, 100, and 233. These points might be exerting a significant influence on the model, and it may be worthwhile to investigate them further. Additionally, these points do not seem to fall under the Cook’s distance threshold, meaning that although they have leverage, they may not have an outsized effect on the model's overall fit.
+
+**BMB**: the most extreme three values are *always* labeled, so this doesn't mean anything ...
 
 ### Part e: Model Adjustments
 
@@ -171,16 +184,16 @@ model_glm_poisson <- glm(n ~ log_gdp + log_pop, family = poisson(link = "log"), 
 summary(model_glm_poisson)
 ```
 
--   **Intercept**: The estimated intercept of $-2.78$ means that when GDP and population are at their log-transformed value of zero (which theoretically would be when GDP and population are both 1), the expected number of gold medals is quite low.
+-   **Intercept**: The estimated intercept of $-2.78$ means that when GDP and population are at their log-transformed value of zero (which theoretically would be when GDP and population are both 1) [**BMB**: note that this is equivalent to GDP==1 billion,  and pop == 1 million] the expected number of gold medals is quite low.
 
--   **log_gdp**: A 1-unit increase in log-transformed GDP is associated with an 81% increase in the expected number of gold medals ($e^{0.81007} \approx 2.25$, or a multiplicative effect of 2.25).
+-   **log_gdp**: A 1-unit increase in log-transformed GDP is associated with an 81% increase in the expected number of gold medals ($e^{0.81007} \approx 2.25$, or a multiplicative effect of 2.25). **BMB**: the "percent increase" heuristic only works when the absolute value is low so that $\exp(\beta) \approx 1+\beta$ ... here it's a 125% increase rather than an 81% increase.
 
 -   **log_pop**: A 1-unit increase in log-transformed population is associated with a 6.5% decrease in the expected number of gold medals ($e^{-0.06547} \approx 0.937$).
 
 -   **Model Performance**:
 
-    -   **Residual Deviance**: 3877.5 on 538 degrees of freedom, which is quite large, suggesting that the model might not be fitting the data well.
-    -   **AIC**: 4799.3 (Poisson models tend to have higher AIC values when overdispersion is present).
+    -   **Residual Deviance**: 3877.5 on 538 degrees of freedom, which is quite large, suggesting that the model might not be fitting the data well. **BMB**: why "quite large"?
+    -   **AIC**: 4799.3 (Poisson models tend to have higher AIC values when overdispersion is present). **BMB**: AIC values in isolation give no information (need to compare AIC values from different models).
 
 ##### Negative Binomial Regression (GLM)
 
@@ -198,12 +211,12 @@ summary(model_glm_nb)
 
 -   **log_gdp**: A 1-unit increase in log-transformed GDP is associated with a 65% increase in the expected number of gold medals ($e^{0.64947} \approx 1.91$).
 
--   **log_pop**: The coefficient is not statistically significant ($p = 0.809$), meaning that population doesn’t have a clear impact on the expected number of gold medals in this model.
+-   **log_pop**: The coefficient is not statistically significant ($p = 0.809$), meaning that population doesn’t have a clear impact on the expected number of gold medals in this model.  **BMB**: but is it large, based on the thresholds you defined in an earlier part of this question?
 
 -   **Model Performance**:
 
     -   **Residual Deviance**: 493.17 on 538 degrees of freedom, which is much lower than the Poisson model, suggesting a better fit.
-    -   **AIC**: 2230.8 (significantly lower than the Poisson model's AIC, indicating a better model).
+    -   **AIC**: 2230.8 (significantly lower than the Poisson model's AIC, indicating a better model). **BMB**: agreed (but what does "significantly" mean in this context?)
 
 ##### Comparing Models
 
@@ -211,6 +224,8 @@ summary(model_glm_nb)
 # Compare the AIC of different models
 AIC(model_interaction, model_glm_poisson, model_glm_nb)
 ```
+
+**BMB**: this suggests you should try NBinom with interaction ...
 
 ##### Diagnostics for GLMs
 
@@ -231,6 +246,8 @@ plot(model_glm_poisson)
 -   Residuals vs Leverage (Influential Points): There are several points with high leverage and significant influence, suggesting that a few data points may disproportionately impact the model’s fit. Points like 407 and 122 may need closer examination, as they may unduly influence the model’s parameters.
 
 -   Conclusion: it is clear that the Poisson model may not be the best fit. The heteroscedasticity, non-normal residuals, and high-leverage points indicate some issues.
+
+**BMB**: why do this for the Poisson model when you already know NBinom is better?
 
 ### Part f: Coefficient Plot
 
@@ -307,6 +324,9 @@ C <- matrix(c(
 
 contrasts(df$Group) <- C
 ```
+**BMB**: this is the *inverse* contrast matrix, not the contrast matrix.
+You have to invert it (add intercept/invert/remove intercept) in order
+for the results to make sense.  For example, with these contrasts the first (non-intercept) coefficient should be `(12+15+22)/3-10 = 6.333`; that's not the answer you got ...
 
 ### Analysis
 
@@ -315,6 +335,7 @@ contrasts(df$Group) <- C
 model <- lm(Response ~ Group, data = df)
 summary(model)
 ```
+
 
 - Explanation:
 
@@ -418,6 +439,7 @@ results <- do.call(rbind, lapply(n_values, function(n) {
     run_simulation(n = n, df = df)
   }))
 }))
+## BMB: nice use of lapply/rbind
 ```
 
 ### Visualization
@@ -429,7 +451,15 @@ ggplot(results, aes(x = df, y = bias, color = factor(n))) +
   labs(title = "Bias as a Function of df and Sample Size", x = "Degrees of Freedom (df)", y = "Bias")
 ```
 
+**BMB**: what about pictures of the other summaries? (Bias might be the least interesting ...) Did you run out of steam?
+
 ## Reference
 
 - OpenAI, ChatGPT (2024). Assistance with R programming and output analysis. Accessed on September 14, 2024.
 - Dr. Ben Bolker, Lecture Notes for "Statistical Modeling", McMaster University. Accessed on September 10, 2024.
+
+
+**BMB**: if you use ChatGPT (thanks for telling me), I would like more detailed information on how you used it. How many total prompts do you think you used? Would it be feasible to include a list of prompts as an appendix?
+
+I feel you put a lot of effort into this (including going beyond what you had to do by looking at the Poisson and negative binomial models -- was that a suggestion of ChatGPT?), but you're missing some important conceptual points (e.g., choosing models for inference on the basis of their within-sample performance; how the contrast matrix is actually used.)  **mark**: 7
+

@@ -1,0 +1,14 @@
+did you consider adding a spline or quadratic effect of age once you saw that the effect of age was nonlinear?
+
+in coef plot p. 6, didn't scale `age` -- should **never** show dot-whisker/coef plots unless you have scaled predictors first (or use `by_2sd = TRUE`)
+ ... because of this you have misinterpreted the strength of the age effect ("the CI is very close to 0, indicating that age may not have a strong impact on contraceptive use, for this model.")
+
+p. 9 careful interpreting significance by no overlap of 95% CIs (in fact 95% CIs just touching implies that the groups are different at an $\alpha$ level of *less* than 5% - see e.g. https://cran.r-project.org/web/packages/emmeans/vignettes/xplanations.html#arrows
+
+p. 14 Wald being similar to profile CIs doesn't have to do with whether the model fits well or not, but whether the log-likelihood surface is quadratic or not (these are different)
+
+Q3: so what are your conclusions??
+
+Thanks for your ChatGPT prompts. For prompt 3 did you mean "coefficient plots" ?
+
+mark: 9/10

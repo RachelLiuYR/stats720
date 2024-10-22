@@ -556,7 +556,7 @@ print(zi_test_result)
 
 1.  In R programming, how to plot a bar chart with a binary predictor on the x-axis and a binary response on the y-axis?
 2.  How to use `DHARMa` for diagnostic checking of (generalized) linear mixed models?
-3.  How to create efficient plots with `dotwhisker`?
+3.  How to create coefficient plots with `dotwhisker`?
 4.  How to create effect plots with `ggeffects`?
 5.  How to fit a GLM, with an offset?
 6.  How to check for overdispersion in a GLM?

@@ -10,5 +10,6 @@ p. 14 Wald being similar to profile CIs doesn't have to do with whether the mode
 Q3: so what are your conclusions??
 
 Thanks for your ChatGPT prompts. For prompt 3 did you mean "coefficient plots" ?
+- Yes, I mean "coefficient plots", sorry for the typo.
 
 mark: 9/10

@@ -1,0 +1,473 @@
+---
+title: "HW3"
+output:
+  pdf_document: default
+  html_document: default
+author: "Yuanrong Liu"
+date: "2024-11-01"
+---
+
+## Packages Loaded
+
+```{r, message=FALSE}
+library(mlmRev) 
+library(ggplot2) 
+library(nlme) 
+library(lme4) 
+library(lmerTest) 
+library(glmmTMB) 
+library(broom.mixed) 
+library(pbkrtest) 
+library(performance)
+library(DHARMa) 
+library(purrr)
+library(dplyr) 
+library(dotwhisker) 
+```
+
+## (a) Fit a linear mixed model
+
+-   `attain` as the **response variable**, `social` (as a **factor**), `sex`, and `verbal` as **fixed effects**, `primary` as the **grouping variable**.
+
+```{r}
+# Convert 'social' to a factor
+ScotsSec$social <- as.factor(ScotsSec$social)
+
+# Fit the linear mixed model
+model_lmm <- lmer(attain ~ 1 + social + sex + verbal + 
+                    (1 + social + sex + verbal | primary), 
+                  data = ScotsSec)
+```
+
+## (b) Find the random-effects term with the smallest estimated variance
+
+```{r}
+summary(model_lmm)
+```
+
+-   I will remove `verbal` as a **random effect** because it has the lowest variance (`0.000117`) among all the random effects in the model.
+
+## Refit the model
+
+```{r}
+# Simplified model without random slope for 'verbal'
+model_lmm2 <- lmer(attain ~ 1 + social + sex + verbal + 
+                     (1 + social + sex | primary), 
+                   data = ScotsSec)
+```
+
+## Find the random-effects term with the smallest estimated variance
+
+```{r}
+summary(model_lmm2)
+```
+
+-   I am going to remove `social` as a **random effect** since `social1` has the lowest variance (`0.02241`) among the remaining random slopes.
+
+## Refit the model
+
+```{r}
+# Fit the model without the random slope for 'social'
+model_lmm3 <- lmer(attain ~ 1 + social + sex + verbal + 
+                     (1 + sex | primary), 
+                   data = ScotsSec)
+```
+
+```{r}
+# Check the summary to see if the convergence issue is resolved
+summary(model_lmm3)
+```
+
+-   Now, only `sex` has a random slope and a random intercept across primary schools.
+-   The random effects summary shows that the model estimates the variability in intercepts and the effect of `sex` across schools, which appears to be a good fit based on the variance estimates.
+-   The fixed effects are statistically significant (except `sexF`, which is borderline at p = `0.0941`).
+-   The intercept of fixed effects represents the estimated average attainment (`attain`) for individuals in the reference group (`sexM` and `social0`), when `verbal` is set to 0.
+
+## (c) Model diagnostics
+
+### Run diagnostics using performance package
+
+```{r}
+check_model(model_lmm3)
+```
+
+#### Posterior Predictive Check
+
+There are some notable discrepancies: one peak in the model-predicted data but two peaks in the observed data. This suggests that the model does not fully capture the observed distribution of the response variable, indicating that the fit could be improved.
+
+#### Linearity
+
+The green line is generally flat for fitted values between 0 and 10, suggesting a well-captured linear relationship. However, the smoothed line shows a slight downward trend as fitted values increase beyond 10, indicating some non-linearity that is not captured by the model.
+
+#### Homogeneity of Variance
+
+The reference line in green shows a general trend that is relatively flat, indicating that the model is mostly meeting the homoscedasticity assumption. There is, however, some slight curvature in the green line, especially for fitted values greater than 10, which suggests a minor deviation from homoscedasticity.
+
+#### Influential Observations
+
+All points fall within the contour lines, suggesting that no observations have an undue influence on the model.
+
+#### Collinearity
+
+The VIF values are close to 1, well below the threshold of 5, suggesting a minimal correlation among the predictors in the model. The predictors are sufficiently independent to provide reliable coefficient estimates, and multicollinearity is not an issue in the model.
+
+#### Normality of Residuals
+
+Most of the residuals lie close to the green reference line, suggesting that the residuals are roughly normally distributed. All residuals fall within the gray confidence band, which is a good indication that the deviations from normality are not extreme or concerning.
+
+#### Normality of Random Effects
+
+For both the `intercept` and `sexF`, the dots appear to fall along the reference line, suggesting that the random effects are approximately normally distributed.
+
+#### Difference from a linear model
+
+`Normality of Random Effects` has been added to linear mixed models.
+
+```{r}
+check_model(lm(attain ~ 1 + social + sex + verbal, data = ScotsSec))
+```
+
+### Run diagnostics using DHARMa
+
+```{r}
+# Simulate residuals using DHARMa
+simulation_output <- simulateResiduals(fittedModel = model_lmm3)
+
+# Plot diagnostic plots
+plot(simulation_output)
+```
+
+#### Q-Q Plot of Residuals
+
+The p-value of `0.04934` from the Kolmogorov-Smirnov (KS) Test indicates that there is a significant deviation from the expected uniform distribution at the `5%` significance level. The model might not fully capture some aspect of the data.
+
+#### Residual vs. Predicted
+
+The red dashed line deviates from the flat reference line, especially at higher predicted values, indicating some pattern in the residuals. There are red asterisks at the top and bottom, which indicate outliers or observations with standardized residuals beyond expected bounds.
+
+## (d) Fit the model with nlme::lme
+
+```{r}
+model_lme <- lme(fixed = attain ~ 1 + social + sex + verbal, 
+                 random = ~ 1 + sex | primary, 
+                 data = ScotsSec, 
+                 method = "REML")
+```
+
+## Fit the model with glmmTMB
+
+```{r}
+model_glmmTMB <- glmmTMB(attain ~ 1 + social + sex + verbal + 
+                           (1 + sex | primary), 
+                         data = ScotsSec, 
+                         REML = TRUE)
+```
+
+## (e) Create a named list of the three models
+
+```{r}
+mod_list <- list(lme = model_lme, 
+                 glmmTMB = model_glmmTMB, 
+                 lmer = model_lmm3)
+
+# Compare the overall model
+model_comparison <- purrr::map_dfr(mod_list, glance, .id = "model")
+
+# Print the model comparison
+print(model_comparison)
+```
+
+## (f) Extract the coefficients
+
+```{r}
+# Extract the fixed effects coefficients using purrr::map_dfr and broom.mixed::tidy
+coefficients <- purrr::map_dfr(mod_list,
+                               ~tidy(., effects = "fixed"), 
+                               .id = "model") |> dplyr::arrange(term)
+```
+
+## Qualitatively compare the coefficients
+
+```{r}
+# Define the comparison function that prints term names explicitly
+compare_models_verbose <- function(values1, values2, terms) {
+  for (i in seq_along(values1)) {
+    term_name <- terms[i]
+    comparison <- ""
+    
+    if (all.equal(values1[i], values2[i], tolerance = 1e-4) == TRUE) {
+      comparison <- "Identical or practically identical"
+    } else if (all.equal(values1[i], values2[i], tolerance = 0.01) == TRUE) {
+      comparison <- "Very similar"
+    } else if (all.equal(values1[i], values2[i], tolerance = 0.1) == TRUE) {
+      comparison <- "Slightly different"
+    } else {
+      comparison <- "Different"
+    }
+    
+    cat(term_name, ":", comparison, "\n")
+  }
+}
+```
+
+```{r}
+# Split the coefficients by model
+coeff_lme <- coefficients %>% filter(model == "lme")
+coeff_lmer <- coefficients %>% filter(model == "lmer")
+coeff_glmmTMB <- coefficients %>% filter(model == "glmmTMB")
+```
+
+```{r}
+# Compare Estimates
+cat("Comparison of Estimates (lme vs lmer):\n")
+compare_models_verbose(coeff_lme$estimate, coeff_lmer$estimate, coeff_lme$term)
+
+cat("\nComparison of Estimates (lme vs glmmTMB):\n")
+compare_models_verbose(coeff_lme$estimate, coeff_glmmTMB$estimate, coeff_lme$term)
+
+cat("\nComparison of Estimates (lmer vs glmmTMB):\n")
+compare_models_verbose(coeff_lmer$estimate, coeff_glmmTMB$estimate, coeff_lmer$term)
+
+# Compare Standard Errors
+cat("\nComparison of Standard Errors (lme vs lmer):\n")
+compare_models_verbose(coeff_lme$std.error, coeff_lmer$std.error, coeff_lme$term)
+
+cat("\nComparison of Standard Errors (lme vs glmmTMB):\n")
+compare_models_verbose(coeff_lme$std.error, coeff_glmmTMB$std.error, coeff_lme$term)
+
+cat("\nComparison of Standard Errors (lmer vs glmmTMB):\n")
+compare_models_verbose(coeff_lmer$std.error, coeff_glmmTMB$std.error, coeff_lmer$term)
+
+# Compare DFs
+cat("\nComparison of df (lme vs lmer):\n")
+compare_models_verbose(coeff_lme$df, coeff_lmer$df, coeff_lme$term)
+
+# Compare P-values
+## Since the df of glmmTMB does not exist, just compare lme and lmer
+cat("\nComparison of P-values (lme vs lmer):\n")
+compare_models_verbose(coeff_lme$p.value, coeff_lmer$p.value, coeff_lme$term)
+
+cat("\nComparison of P-values (lme vs glmmTMB):\n")
+compare_models_verbose(coeff_lme$p.value, coeff_glmmTMB$p.value, coeff_lme$term)
+
+cat("\nComparison of P-values (lmer vs glmmTMB):\n")
+compare_models_verbose(coeff_lmer$p.value, coeff_glmmTMB$p.value, coeff_lmer$term)
+```
+
+-   The comparisons show that `estimates` are **"identical or practically identical"** across the models. The `standard errors` and `p-values` were mostly very similar, with slight differences in some cases.
+
+## (g) Generate a coefficient plot of the fixed effects
+
+```{r}
+# Create a coefficient plot using ggplot2
+ggplot(coefficients, aes(x = estimate, y = term, color = model)) +
+  geom_point(position = position_dodge(width = 0.5)) +
+  geom_errorbarh(aes(xmin = estimate - std.error, xmax = estimate + std.error),
+                 height = 0.2, position = position_dodge(width = 0.5)) +
+  facet_wrap(~term, scales = "free") +
+  theme_minimal() +
+  labs(title = "Coefficient Plot of Fixed Effects", 
+       x = "Estimate", 
+       y = "Term", 
+       caption = "Comparison of fixed effect estimates across models",
+       color = "Model")
+```
+
+-   The estimates across the models are **identical or practically identical**, as previously observed during the qualitative comparison.
+
+## (h) Compare denominator df
+
+```{r}
+# Compute coefficients with Satterthwaite approximation
+satterthwaite_summary <- coef(summary(model_lmm3, ddf = "Satterthwaite"))
+satterthwaite_df <- satterthwaite_summary[, "df"]
+cat("Satterthwaite degrees of freedom:\n")
+print(satterthwaite_df)
+
+# Compute coefficients with Kenward-Roger approximation
+kenward_roger_summary <- coef(summary(model_lmm3, ddf = "Kenward-Roger"))
+kenward_roger_df <- kenward_roger_summary[, "df"]
+cat("Kenward-Roger degrees of freedom:\n")
+print(kenward_roger_df)
+```
+
+```{r}
+# Compare Satterthwaite and Kenward-Roger degrees of freedom
+cat("Comparison of Degrees of Freedom (Satterthwaite vs Kenward-Roger):\n")
+compare_models_verbose(satterthwaite_df, kenward_roger_df, names(satterthwaite_df))
+```
+
+-   For the majority of the fixed effect terms (`(Intercept)`, `social1`, `social20`, `social31`, `verbal`), the degrees of freedom calculated by the **Satterthwaite** and **Kenward-Roger** methods are classified as "Very similar". The degrees of freedom for `sexF` are classified as **Different** between Satterthwaite and Kenward-Roger.
+-   This suggests that, for all terms except `sexF`, both methods produce nearly equivalent estimates for the degrees of freedom, indicating consistency in how the two methods adjust for the model’s random effects.
+
+```{r}
+# Extract degrees of freedom from the lme model
+lme_summary <- summary(model_lme)
+lme_df <- lme_summary$tTable[, "DF"]
+lme_df
+```
+
+```{r}
+# Compare lme vs Satterthwaite degrees of freedom
+cat("Comparison of Degrees of Freedom (lme vs Satterthwaite):\n")
+compare_models_verbose(lme_df, satterthwaite_df, names(lme_df))
+
+# Compare lme vs Kenward-Roger degrees of freedom
+cat("\nComparison of Degrees of Freedom (lme vs Kenward-Roger):\n")
+compare_models_verbose(lme_df, kenward_roger_df, names(lme_df))
+```
+
+-   `Intercept` and `sexF` have a **Different** df compared to both **Satterthwaite** and **Kenward-Roger**. This suggests that the **lme** model is producing degrees of freedom significantly different for the overall mean and the gender effect.
+
+## (i) Plot the random effect of sex for each school against the corresponding random intercept
+
+```{r}
+# Extract random effects using broom.mixed::tidy
+random_effects <- tidy(model_lmm3, effects = "ran_vals")
+
+# Filter random effects for 'sex' slope and intercept for each school
+random_intercepts <- random_effects[random_effects$term == "(Intercept)" & 
+                                      random_effects$group == "primary", ]
+random_slopes <- random_effects[random_effects$term == "sexF" & 
+                                  random_effects$group == "primary", ]
+
+# Merge intercepts and slopes by school
+random_effects_combined <- merge(random_intercepts, 
+                                 random_slopes, 
+                                 by = "level", 
+                                 suffixes = c("_intercept", "_slope"))
+```
+
+```{r}
+# Plot the random effect of sex slope against the random intercept
+plot <- ggplot(random_effects_combined, aes(x = estimate_intercept, y = estimate_slope)) +
+  geom_point() +
+  labs(
+    title = "Random Effect of Sex Slope vs Random Intercept",
+    x = "Random Intercept (School Level)",
+    y = "Random Slope for Sex (Difference from Population-Level Slope)"
+  ) +
+  theme_minimal()
+
+# Display the plot
+print(plot)
+```
+
+```{r}
+# Plot with error bars
+plot <- ggplot(random_effects_combined, aes(x = estimate_intercept, y = estimate_slope)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = estimate_slope - std.error_slope, 
+                    ymax = estimate_slope + std.error_slope), 
+                width = 0) +
+  geom_errorbarh(aes(xmin = estimate_intercept - std.error_intercept, 
+                     xmax = estimate_intercept + std.error_intercept), 
+                 height = 0) +
+  labs(
+    title = "Random Effect of Sex Slope vs Random Intercept",
+    x = "Random Intercept (School Level)",
+    y = "Random Slope for Sex (Difference from Population-Level Slope)"
+  ) +
+  theme_minimal()
+
+# Display the plot
+print(plot)
+```
+
+## (j) Explain why not to treat social as a random-effects grouping variable
+
+```{r}
+summary(ScotsSec$social)
+```
+
+-   `social` is a factor with four levels: `0`, `1`, `20`, `31`. These levels are fixed, exhaustive categories, instead of randomly sampled groups. They are not drawn from a larger population.
+
+-   We are interested in the specific effects of each `social` level on the attainment, instead of the variability across random levels of 'social'.
+
+-   If we treat `social` as a random effect, the model would only estimate a variance component, which would make it difficult to make specific comparisons about the influence of each social status on attainment.
+
+-   The correct approach is to treat `social` as a fixed effect, (correct approach, `model_lmm3 <- lmer(attain ~ 1 + social + sex + verbal + (1 + sex | primary), data = ScotsSec)`), for individual `j` in primary group `i`:
+
+$$
+\text{attain}_{ij} = (\beta_0 + u_{0, \text{primary}[i]} + u_{1, \text{primary}[i]} \cdot \text{sex}_{ij}) + \beta_1 \cdot \text{social}_{ij} + \beta_2 \cdot \text{sex}_{ij} + \beta_3 \cdot \text{verbal}_{ij} + \epsilon_{ij}
+$$
+
+## (k) Explain why not to leave the fixed effect of 'sex' out of the model
+
+- Without the fixed effect of `sex`, there model does not provide a baseline estimate for the overall population-level effect of `sex` on `attainment`, so we cannot estimate an overall population level of `sex` on `attainment`. 
+
+- Instead, the model only estimates how the effect of 'sex' varies across schools, but not in the general population. This makes the interpretation limited because it does not tell us what the typical impact of `sex` is, only how it changes from school to school.
+
+- Random effects are deviations from an average effect. If there is no fixed effect of sex, it will becomes difficult to interpret what the random slopes for `sex` deviates from, without a baseline effect (reference point) of sex.
+
+## (i) Fit reduced models
+
+```{r}
+model_lmm3 <- lmer(attain ~ 1 + social + sex + verbal + 
+                     (1 + sex | primary), 
+                   data = ScotsSec,
+                   REML = TRUE)
+
+model_lmm4 <- lmer(attain ~ 1 + social + sex + verbal +
+                     (1 | primary), # with random effects intercept variation only
+                   data = ScotsSec,
+                   REML = TRUE)
+```
+
+## Compare models
+```{r}
+anova(model_lmm4, model_lmm3)
+```
+```{r}
+# Extract values for comparison
+values1 <- c(AIC(model_lmm4), logLik(model_lmm4))
+values2 <- c(AIC(model_lmm3), logLik(model_lmm3))
+terms <- c("AIC", "log-likelihood")
+
+# Use the function to compare
+compare_models_verbose(values1, values2, terms)
+```
+
+- The AICs (`Akaike Information Criterion`) of both models are very similar: `14683` for `model_lmm4` and `14676` for `model_lmm3`. `model_lmm3` has a slightly lower AIC, suggesting that it fits the data better.
+
+- The `log-likelihood` are also very similar: `-7333.4` for `model_lmm4` and `-7328.0` for `model_lmm3`. The log-likelihood of `model_lmm3` is slightly higher, suggesting a better fit.
+
+- The likelihood ratio test (`LRT`) yielded a statistically significant result (`p-value = 0.004425`), indicating that including a random slope for `sex` across `primary` schools in `model_lmm3` significantly improves the model fit.
+
+- There is significant variation in the effect of `sex` on `attainment` across different primary schools.
+
+## Use parametric bootstrapping to compare models with pbkrtest::PBmodcomp
+
+To address convergence failures, we can scale the data `verbal` and change the optimizer (according to ChatGPT).
+```{r}
+ScotsSec$verbal <- scale(ScotsSec$verbal)
+# Then refit the model
+model_lmm3 <- lmer(attain ~ 1 + social + sex + verbal + (1 + sex | primary),
+                   data = ScotsSec, 
+                   REML = TRUE, 
+                   control = lmerControl(optCtrl = list(maxfun = 1e6), optimizer = "bobyqa"))
+
+model_lmm4 <- lmer(attain ~ 1 + social + sex + verbal + (1 | primary), 
+                   data = ScotsSec,
+                   REML = TRUE, 
+                   control = lmerControl(optCtrl = list(maxfun = 1e6), optimizer = "bobyqa"))
+```
+
+```{r}
+# Compare models using parametric bootstrap with 1000 simulations
+pb_comp <- PBmodcomp(model_lmm3, model_lmm4, nsim = 1000)
+
+# Print results
+print(pb_comp)
+```
+## Reference
+
+-   OpenAI, ChatGPT (2024). Assistance with R programming and output analysis. 
+
+## Appendix
+
+-   Here is a list of prompts I used in **ChatGPT 4o with canvas**:
+
+1.  How to use `DHARMa` to run diagnostics on a model?
+2.  How to fit a model with `nlme::lme()` and with `glmmTMB`?
+3.  How to address convergence failure in a linear mixed model?
